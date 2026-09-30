@@ -1,0 +1,1176 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Salle de lecture — Visionneuse sécurisée</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<style>
+  :root{
+    --bg:#F6F8F4;
+    --panel:#FFFFFF;
+    --panel-2:#EEF4EC;
+    --border:#DCE6DC;
+    --border-strong:#C7D6C7;
+    --ink-deep:#123A28;
+    --text:#1E3327;
+    --text-muted:#5C7566;
+    --green:#1E6B44;
+    --green-deep:#0E3D27;
+    --red:#9A2B24;
+    --red-deep:#6E1D19;
+    --red-soft:#F4E2E0;
+    --paper:#FFFFFF;
+    --paper-line:#E7E5DD;
+    box-sizing:border-box;
+    padding-top:env(safe-area-inset-top,0px);
+    padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    height:100%;
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family:'Inter',system-ui,sans-serif;
+    font-size:16px;
+    overscroll-behavior:none;
+  }
+  ::selection{ background:transparent; }
+  body.locked{ user-select:none; -webkit-user-select:none; }
+
+  h1,h2,h3,.serif{ font-family:'Source Serif 4', Georgia, serif; }
+
+  /* ---------- layout ---------- */
+  .app{
+    display:grid;
+    grid-template-columns:320px 1fr;
+    height:100%;
+    min-height:100vh;
+    border-top:4px solid var(--green-deep);
+  }
+  @media (max-width:820px){
+    .app{ grid-template-columns:1fr; grid-template-rows:auto 1fr; }
+    .sidebar{ order:2; border-top:1px solid var(--border); border-right:none; max-height:44vh; overflow-y:auto; }
+    .stage-wrap{ order:1; }
+  }
+
+  .sidebar{
+    background:var(--panel);
+    border-right:1px solid var(--border);
+    padding:32px 26px;
+    display:flex;
+    flex-direction:column;
+    gap:30px;
+  }
+  .brand{
+    display:flex;
+    align-items:center;
+    gap:14px;
+    padding-bottom:22px;
+    border-bottom:1px solid var(--border);
+  }
+  .brand .mark{
+    width:40px;height:40px;
+    border-radius:10px;
+    background:linear-gradient(150deg, var(--green) 0%, var(--green-deep) 55%);
+    box-shadow:0 3px 0 var(--red-deep), 0 8px 16px rgba(14,61,39,0.25);
+    flex-shrink:0;
+    position:relative;
+  }
+  .brand .mark::after{
+    content:"";
+    position:absolute;
+    inset:11px;
+    border:2px solid rgba(255,255,255,0.85);
+    border-radius:4px;
+  }
+  .brand h1{
+    font-size:22px;
+    color:var(--ink-deep);
+    margin:0;
+    font-weight:700;
+    letter-spacing:.1px;
+    line-height:1.15;
+  }
+  .brand span{
+    display:block;
+    font-size:13.5px;
+    color:var(--text-muted);
+    margin-top:3px;
+    font-family:'Inter';
+  }
+
+  .field-label{
+    font-size:13.5px;
+    color:var(--text-muted);
+    margin-bottom:9px;
+    display:block;
+    font-weight:500;
+  }
+
+  .dropzone{
+    border:2px dashed var(--border-strong);
+    border-radius:12px;
+    padding:26px 18px;
+    text-align:center;
+    cursor:pointer;
+    transition:border-color .15s ease, background .15s ease;
+    background:var(--panel-2);
+  }
+  .dropzone:hover, .dropzone.drag{
+    border-color:var(--green);
+    background:#E4F0E7;
+  }
+  .dropzone p{ margin:0; font-size:15px; color:var(--text); font-weight:500; }
+  .dropzone p.hint{ color:var(--text-muted); font-size:13px; margin-top:7px; font-weight:400; }
+  .dropzone input{ display:none; }
+
+  .doc-item{
+    display:flex;
+    align-items:center;
+    gap:11px;
+    padding:12px 14px;
+    border-radius:8px;
+    border:1px solid transparent;
+    cursor:pointer;
+    font-size:15px;
+    color:var(--text);
+  }
+  .doc-item:hover{ background:var(--panel-2); }
+  .doc-item.active{
+    background:var(--red-soft);
+    border-color:rgba(154,43,36,0.35);
+    color:var(--red-deep);
+    font-weight:600;
+  }
+  .doc-item .dot{ width:7px;height:7px;border-radius:50%;background:var(--border-strong); flex-shrink:0;}
+  .doc-item.active .dot{ background:var(--red); }
+  .doc-item .name{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
+
+  .viewer-name-box input{
+    width:100%;
+    background:var(--panel);
+    border:1.5px solid var(--border-strong);
+    color:var(--ink-deep);
+    padding:12px 14px;
+    border-radius:8px;
+    font-size:15px;
+    font-family:'Inter';
+  }
+  .viewer-name-box input:focus{ outline:none; border-color:var(--green); box-shadow:0 0 0 3px rgba(30,107,68,0.12); }
+
+  .protections{
+    margin-top:auto;
+    padding-top:20px;
+    border-top:1px solid var(--border);
+    font-size:13.5px;
+    color:var(--text-muted);
+    line-height:1.65;
+  }
+  .protections strong{ color:var(--ink-deep); font-weight:600; }
+  .protections .row{ display:flex; gap:9px; align-items:flex-start; margin-bottom:8px; }
+  .protections .row svg{ flex-shrink:0; margin-top:3px; }
+
+  /* ---------- stage ---------- */
+  .stage-wrap{
+    position:relative;
+    display:flex;
+    flex-direction:column;
+    background:
+      radial-gradient(ellipse at top, rgba(30,107,68,0.06), transparent 55%),
+      var(--bg);
+  }
+  .topbar{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:18px 30px;
+    background:var(--panel);
+    border-bottom:1px solid var(--border);
+    padding-top:calc(18px + env(safe-area-inset-top,0px));
+  }
+  .doc-title{
+    font-size:17px;
+    color:var(--ink-deep);
+    font-weight:600;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    font-family:'Source Serif 4', Georgia, serif;
+  }
+  .doc-title .sub{ color:var(--text-muted); font-weight:400; font-size:13.5px; margin-left:9px; font-family:'Inter'; }
+
+  .controls{ display:flex; gap:9px; align-items:center; }
+  .btn{
+    background:var(--panel-2);
+    border:1.5px solid var(--border);
+    color:var(--text);
+    padding:9px 16px;
+    border-radius:8px;
+    font-size:14.5px;
+    font-family:'Inter';
+    font-weight:500;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    gap:7px;
+    transition:background .15s ease, color .15s ease, border-color .15s ease;
+  }
+  .btn:hover{ background:#E4EEE5; border-color:var(--border-strong); color:var(--ink-deep); }
+  .btn:disabled{ opacity:.4; cursor:not-allowed; }
+  .btn.gold{ background:var(--red); border-color:var(--red); color:#FFFFFF; font-weight:600; }
+  .btn.gold:hover{ background:var(--red-deep); border-color:var(--red-deep); }
+  .page-indicator{
+    font-size:14.5px; color:var(--text-muted); min-width:78px; text-align:center; font-weight:500;
+  }
+
+  .canvas-area{
+    flex:1;
+    overflow:auto;
+    display:flex;
+    align-items:flex-start;
+    justify-content:center;
+    padding:40px 24px;
+    position:relative;
+  }
+  .sheet{
+    position:relative;
+    background:var(--paper);
+    box-shadow:0 24px 50px rgba(14,61,39,0.16), 0 0 0 1px var(--paper-line);
+    max-width:900px;
+    width:100%;
+    min-height:200px;
+    overflow:hidden;
+    border-radius:2px;
+  }
+  .sheet::before{
+    content:"";
+    position:absolute;
+    top:0; left:0; right:0;
+    height:5px;
+    background:linear-gradient(90deg, var(--green-deep) 0%, var(--green) 45%, var(--red) 100%);
+    z-index:6;
+  }
+  .sheet canvas{
+    display:block;
+    width:100%;
+    height:auto;
+    pointer-events:none;
+    -webkit-user-drag:none;
+  }
+  .docx-content{
+    padding:70px 72px;
+    color:#22242A;
+    font-family:'Source Serif 4', Georgia, serif;
+    font-size:18px;
+    line-height:1.75;
+    pointer-events:none;
+  }
+  .docx-content h1,.docx-content h2,.docx-content h3{ font-family:'Source Serif 4', Georgia, serif; color:var(--ink-deep); }
+  .docx-content img{ max-width:100%; height:auto; }
+  .docx-content table{ border-collapse:collapse; width:100%; font-size:16px; }
+  .docx-content table td, .docx-content table th{ border:1px solid #ccc4ae; padding:8px 12px; }
+
+  /* watermark overlay, tiled, on top of everything */
+  .watermark-layer{
+    position:absolute;
+    inset:0;
+    pointer-events:none;
+    overflow:hidden;
+    display:flex;
+    flex-wrap:wrap;
+    align-content:space-around;
+    justify-content:space-around;
+    z-index:5;
+  }
+  .watermark-layer span{
+    display:inline-block;
+    color:rgba(14,61,39,0.10);
+    font-size:14.5px;
+    font-family:'Inter';
+    font-weight:700;
+    white-space:nowrap;
+    transform:rotate(-28deg);
+    padding:28px 36px;
+  }
+
+  .empty-state{
+    margin:auto;
+    text-align:center;
+    color:var(--text-muted);
+    max-width:380px;
+    padding:40px;
+  }
+  .empty-state .mark{
+    width:52px;height:52px;border-radius:12px;
+    background:linear-gradient(150deg, var(--green), var(--green-deep));
+    box-shadow:0 4px 0 var(--red-deep);
+    margin:0 auto 24px;
+  }
+  .empty-state h2{ color:var(--ink-deep); font-size:24px; margin:0 0 10px; font-weight:700; }
+  .empty-state p{ font-size:15px; line-height:1.65; margin:0; }
+
+  .loading{
+    margin:auto;
+    color:var(--text-muted);
+    font-size:15px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:16px;
+  }
+  .spinner{
+    width:24px;height:24px;
+    border-radius:50%;
+    border:3px solid var(--border);
+    border-top-color:var(--red);
+    animation:spin .8s linear infinite;
+  }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+
+  /* fullscreen tweak */
+  .stage-wrap:fullscreen{ background:var(--bg); }
+  .stage-wrap:fullscreen .canvas-area{ padding:52px 28px; }
+
+  /* print guard: hide everything meaningful if someone forces print */
+  @media print{
+    body *{ visibility:hidden !important; }
+    body::before{
+      content:"Impression désactivée — ce document est protégé et ne peut pas être imprimé.";
+      visibility:visible;
+      position:fixed; top:40%; left:0; right:0;
+      text-align:center;
+      font-family:Inter, sans-serif;
+      font-size:18px;
+      color:#000;
+    }
+  }
+
+  .toast{
+    position:fixed;
+    bottom:26px; left:50%;
+    transform:translateX(-50%) translateY(20px);
+    background:var(--ink-deep);
+    color:#FFFFFF;
+    padding:12px 20px;
+    border-radius:8px;
+    font-size:14.5px;
+    font-weight:500;
+    border:1px solid var(--red-deep);
+    opacity:0;
+    transition:opacity .2s ease, transform .2s ease;
+    z-index:50;
+    pointer-events:none;
+  }
+  .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+
+  .sync-status{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    font-size:13px;
+    font-weight:500;
+    padding:9px 12px;
+    border-radius:8px;
+    background:var(--panel-2);
+    border:1px solid var(--border);
+    color:var(--text-muted);
+  }
+  .sync-status .pulse{
+    width:8px;height:8px;border-radius:50%;
+    background:var(--green);
+    flex-shrink:0;
+    box-shadow:0 0 0 rgba(30,107,68,0.5);
+    animation:pulse 2s infinite;
+  }
+  @keyframes pulse{
+    0%{ box-shadow:0 0 0 0 rgba(30,107,68,0.35); }
+    70%{ box-shadow:0 0 0 7px rgba(30,107,68,0); }
+    100%{ box-shadow:0 0 0 0 rgba(30,107,68,0); }
+  }
+  .sync-status.owner .pulse{ background:var(--red); box-shadow:0 0 0 rgba(154,43,36,0.5); }
+  .sync-status.owner{ color:var(--red-deep); border-color:rgba(154,43,36,0.3); background:var(--red-soft); }
+
+  .share-row{
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+  }
+  .share-row .btn{ width:100%; justify-content:center; }
+
+  .readonly-notice{
+    background:var(--panel-2);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:16px;
+    font-size:14px;
+    line-height:1.55;
+    color:var(--text-muted);
+  }
+  .readonly-notice strong{ color:var(--ink-deep); display:block; margin-bottom:4px; font-size:14.5px; }
+
+  .drive-input-row input{
+    width:100%;
+    background:var(--panel);
+    border:1.5px solid var(--border-strong);
+    color:var(--ink-deep);
+    padding:11px 13px;
+    border-radius:8px;
+    font-size:14px;
+    font-family:'Inter';
+    margin-bottom:10px;
+  }
+  .drive-input-row input:focus{ outline:none; border-color:var(--green); box-shadow:0 0 0 3px rgba(30,107,68,0.12); }
+  .drive-btn-row{ display:flex; gap:8px; }
+  .drive-btn-row .btn{ flex:1; justify-content:center; font-size:13.5px; padding:9px 10px; }
+  .hint-text{ color:var(--text-muted); font-size:12.5px; margin:10px 0 0; line-height:1.5; }
+
+  .drive-frame-wrap{
+    position:relative;
+    background:var(--paper);
+    box-shadow:0 24px 50px rgba(14,61,39,0.16), 0 0 0 1px var(--paper-line);
+    max-width:1000px;
+    width:100%;
+    aspect-ratio:4/3;
+    overflow:hidden;
+    border-radius:2px;
+  }
+  .drive-frame-wrap iframe{ width:100%; height:100%; border:0; display:block; }
+  .drive-fallback{
+    position:absolute; inset:0;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:12px; padding:30px; text-align:center;
+    background:var(--paper); color:var(--text-muted); font-size:14px;
+  }
+
+  a{ color:var(--red); }
+  ::-webkit-scrollbar{ width:11px; height:11px; }
+  ::-webkit-scrollbar-thumb{ background:var(--border-strong); border-radius:6px; }
+  ::-webkit-scrollbar-track{ background:transparent; }
+</style>
+</head>
+<body class="locked">
+
+<div class="app">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="mark"></div>
+      <div>
+        <h1>Salle de lecture</h1>
+        <span>Présentation sécurisée de documents</span>
+      </div>
+    </div>
+
+    <div>
+      <span class="field-label">Nom de la personne qui consulte</span>
+      <div class="viewer-name-box">
+        <input id="viewerName" type="text" placeholder="ex. Awa Diop" autocomplete="off">
+      </div>
+    </div>
+
+    <div class="sync-status" id="syncStatus" style="display:none;"></div>
+
+    <div class="share-row" id="shareRow" style="display:none;">
+      <span class="field-label">Lien à partager aux participants</span>
+      <button class="btn gold" id="copyLinkBtn">Copier le lien de la présentation</button>
+    </div>
+
+    <div id="uploadSection">
+      <span class="field-label">Ajouter un document (.pdf / .docx)</span>
+      <label class="dropzone" id="dropzone">
+        <input type="file" id="fileInput" accept=".pdf,.docx" multiple>
+        <p>Glisser un fichier ici ou cliquer pour parcourir</p>
+        <p class="hint">PDF et Word (.docx) uniquement</p>
+      </label>
+    </div>
+
+    <div class="readonly-notice" id="readonlyNotice" style="display:none;">
+      <strong>Vue participant</strong>
+      Tu vois cette présentation en lecture seule. Les pages avancent en direct, suivant le présentateur.
+    </div>
+
+    <div id="driveSection">
+      <span class="field-label">Ou coller un lien Google Drive</span>
+      <div class="drive-input-row">
+        <input type="text" id="driveUrlInput" placeholder="https://drive.google.com/…">
+      </div>
+      <div class="drive-btn-row">
+        <button class="btn" id="driveViewBtn">Présenter en lecture seule</button>
+        <a class="btn" id="driveEditBtn" href="#" target="_blank" rel="noopener" style="text-decoration:none; text-align:center;">Ouvrir pour collaborer</a>
+      </div>
+      <p class="hint-text">« Lecture seule » l'affiche ici, filigrané. « Collaborer » l'ouvre dans un nouvel onglet Google, avec les droits que tu as configurés sur Drive.</p>
+    </div>
+
+    <div id="docList" style="display:flex; flex-direction:column; gap:4px;"></div>
+
+    <div class="protections">
+      <div class="row">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#C89B3C" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>
+        <div><strong>Téléchargement</strong> et impression désactivés</div>
+      </div>
+      <div class="row">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#C89B3C" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>
+        <div><strong>Copie et sélection</strong> de texte bloquées</div>
+      </div>
+      <div class="row">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#C89B3C" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>
+        <div><strong>Filigrane nominatif</strong> avec horodatage</div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- STAGE -->
+  <main class="stage-wrap" id="stageWrap">
+    <div class="topbar">
+      <div class="doc-title" id="docTitle">Aucun document ouvert<span class="sub" id="docSub"></span></div>
+      <div class="controls">
+        <button class="btn" id="prevBtn" disabled>&larr; Précédent</button>
+        <span class="page-indicator" id="pageIndicator">—</span>
+        <button class="btn" id="nextBtn" disabled>Suivant &rarr;</button>
+        <button class="btn gold" id="fsBtn">Plein écran</button>
+      </div>
+    </div>
+
+    <div class="canvas-area" id="canvasArea">
+      <div class="empty-state" id="emptyState">
+        <div class="mark"></div>
+        <h2>Prêt pour la présentation</h2>
+        <p>Ajoutez un document PDF ou Word dans le panneau de gauche pour commencer la lecture à l'écran, en mode consultation uniquement.</p>
+      </div>
+    </div>
+  </main>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const PDF_WORKER_URL = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+// Quand ce fichier est ouvert directement depuis le disque (double-clic), certains
+// navigateurs refusent de créer le "worker" pdf.js s'il pointe vers une autre origine.
+// On contourne le problème en récupérant le code du worker et en le chargeant en local (Blob).
+const pdfWorkerReady = (async () => {
+  try {
+    const resp = await fetch(PDF_WORKER_URL);
+    const code = await resp.text();
+    const blobUrl = URL.createObjectURL(new Blob([code], { type: 'application/javascript' }));
+    pdfjsLib.GlobalWorkerOptions.workerSrc = blobUrl;
+  } catch (e) {
+    console.warn('Repli sur le worker distant pdf.js :', e);
+    pdfjsLib.GlobalWorkerOptions.workerSrc = PDF_WORKER_URL;
+  }
+})();
+
+const state = {
+  docs: [],          // {id, name, type: 'pdf'|'docx', pdfDoc?, htmlContent?, currentPage, totalPages}
+  activeId: null,
+};
+
+const el = {
+  fileInput: document.getElementById('fileInput'),
+  dropzone: document.getElementById('dropzone'),
+  docList: document.getElementById('docList'),
+  canvasArea: document.getElementById('canvasArea'),
+  emptyState: document.getElementById('emptyState'),
+  docTitle: document.getElementById('docTitle'),
+  docSub: document.getElementById('docSub'),
+  prevBtn: document.getElementById('prevBtn'),
+  nextBtn: document.getElementById('nextBtn'),
+  pageIndicator: document.getElementById('pageIndicator'),
+  fsBtn: document.getElementById('fsBtn'),
+  stageWrap: document.getElementById('stageWrap'),
+  viewerName: document.getElementById('viewerName'),
+  toast: document.getElementById('toast'),
+  syncStatus: document.getElementById('syncStatus'),
+  shareRow: document.getElementById('shareRow'),
+  copyLinkBtn: document.getElementById('copyLinkBtn'),
+  uploadSection: document.getElementById('uploadSection'),
+  readonlyNotice: document.getElementById('readonlyNotice'),
+  driveSection: document.getElementById('driveSection'),
+  driveUrlInput: document.getElementById('driveUrlInput'),
+  driveViewBtn: document.getElementById('driveViewBtn'),
+  driveEditBtn: document.getElementById('driveEditBtn'),
+};
+
+let toastTimer;
+function showToast(msg){
+  el.toast.textContent = msg;
+  el.toast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=> el.toast.classList.remove('show'), 2200);
+}
+
+/* ================== mode session partagée (lien à distance) ================== */
+let syncedMode = false;
+let isOwner = false;
+let platformDb = null;
+let platformAssets = null;
+let platformUser = null;
+let sessionDocRef = null;
+let lastSessionData = null;
+let viewerDisplayName = null;
+const syncedPdfCache = { assetId: null, pdfDoc: null };
+
+async function initPlatform(){
+  if (!window.claude || typeof window.claude.use !== 'function'){
+    return; // fichier ouvert localement : mode solo, rien à synchroniser
+  }
+  try {
+    platformDb = await window.claude.use('db');
+  } catch(e){ platformDb = null; }
+  if (!platformDb) return; // pas de session partagée disponible dans cette vue
+
+  syncedMode = true;
+  platformAssets = await window.claude.use('assets').catch(() => null);
+  platformUser = await window.claude.use('user').catch(() => null);
+
+  if (platformUser){
+    try {
+      const me = await platformUser.me();
+      isOwner = !!(me.isOwner || me.canEdit);
+      viewerDisplayName = me.name || null;
+    } catch(e){ console.warn('Identité indisponible :', e); }
+  }
+
+  if (viewerDisplayName){
+    el.viewerName.value = viewerDisplayName;
+    el.viewerName.disabled = true;
+    el.viewerName.title = 'Identifié automatiquement pour cette présentation.';
+  }
+
+  applySyncedModeUI();
+
+  sessionDocRef = platformDb.doc('session/current');
+  sessionDocRef.onSnapshot(
+    (snap) => {
+      if (!snap.exists){
+        lastSessionData = null;
+        syncedPdfCache.assetId = null;
+        syncedPdfCache.pdfDoc = null;
+        el.canvasArea.innerHTML = '';
+        el.emptyState.style.display = '';
+        el.docTitle.textContent = isOwner ? 'Aucun document ouvert' : 'En attente du présentateur';
+        el.docSub.textContent = '';
+        el.pageIndicator.textContent = '—';
+        el.prevBtn.disabled = true;
+        el.nextBtn.disabled = true;
+        return;
+      }
+      lastSessionData = snap.data();
+      renderSyncedSession(lastSessionData);
+    },
+    (err) => {
+      console.error('Erreur de synchronisation de session :', err);
+      showToast('La connexion à la présentation en direct a été interrompue.');
+    }
+  );
+}
+initPlatform();
+
+function applySyncedModeUI(){
+  el.syncStatus.style.display = 'flex';
+  if (isOwner){
+    el.syncStatus.classList.add('owner');
+    el.syncStatus.innerHTML = '<span class="pulse"></span>Session en direct — tu présentes';
+    el.shareRow.style.display = 'flex';
+    el.uploadSection.style.display = '';
+    el.driveSection.style.display = '';
+    el.readonlyNotice.style.display = 'none';
+  } else {
+    el.syncStatus.innerHTML = '<span class="pulse"></span>Connecté à la présentation en direct';
+    el.shareRow.style.display = 'none';
+    el.uploadSection.style.display = 'none';
+    el.driveSection.style.display = 'none';
+    el.readonlyNotice.style.display = 'block';
+  }
+}
+
+el.copyLinkBtn?.addEventListener('click', async () => {
+  const link = window.location.href;
+  try {
+    await navigator.clipboard.writeText(link);
+    showToast('Lien copié — envoie-le aux participants.');
+  } catch(e){
+    showToast('Copie impossible ici. Copie le lien depuis la barre d\u2019adresse.');
+  }
+});
+
+async function uploadToSession(file, ext){
+  showLoadingState(file.name);
+  try {
+    if (ext === 'pdf'){
+      await pdfWorkerReady;
+      const buf = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
+      const totalPages = pdf.numPages;
+
+      if (!platformAssets){
+        showFileError("Le partage en direct n'est pas disponible pour ta vue (droits insuffisants).");
+        return;
+      }
+      const uploadResult = await platformAssets.upload(file, { type: 'application/pdf' });
+      await sessionDocRef.set({
+        docType: 'pdf',
+        docName: file.name,
+        assetId: uploadResult.id,
+        currentPage: 1,
+        totalPages,
+        presenterName: viewerDisplayName || 'Présentateur',
+        updatedAt: Date.now(),
+      });
+    } else {
+      const arrayBuffer = await file.arrayBuffer();
+      const result = await mammoth.convertToHtml({ arrayBuffer });
+      let html = result.value;
+      if (html.length > 220000){
+        html = html.replace(/<img[^>]*>/g, '<span style="color:#9A2B24;font-style:italic;">[image non affichée dans la vue partagée]</span>');
+      }
+      if (html.length > 220000){
+        html = html.slice(0, 220000) + '<p><em>(document tronqué pour la vue partagée — trop volumineux)</em></p>';
+      }
+      await sessionDocRef.set({
+        docType: 'docx',
+        docName: file.name,
+        html,
+        currentPage: 1,
+        totalPages: 1,
+        presenterName: viewerDisplayName || 'Présentateur',
+        updatedAt: Date.now(),
+      });
+    }
+  } catch(err){
+    console.error('Erreur de mise en ligne de la session :', err);
+    showFileError("Impossible de partager ce document. Réessaie dans un instant.");
+  }
+}
+
+/* ---------------- liens Google Drive ---------------- */
+function normalizeUrl(raw){
+  let s = (raw || '').trim();
+  if (s && !/^https?:\/\//i.test(s)) s = 'https://' + s;
+  return s;
+}
+
+function parseDriveLink(rawUrl){
+  let url;
+  try { url = new URL(normalizeUrl(rawUrl)); } catch(e){ return null; }
+  if (!/(^|\.)google\.com$/.test(url.hostname)) return null;
+
+  let id = url.searchParams.get('id');
+  const dMatch = url.pathname.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  if (dMatch) id = dMatch[1];
+  if (!id) return null;
+
+  let kind = 'file';
+  if (url.pathname.includes('/document/')) kind = 'document';
+  else if (url.pathname.includes('/presentation/')) kind = 'presentation';
+  else if (url.pathname.includes('/spreadsheets/')) kind = 'spreadsheets';
+
+  const embedUrl = kind === 'file'
+    ? `https://drive.google.com/file/d/${id}/preview`
+    : `https://docs.google.com/${kind}/d/${id}/preview`;
+
+  return { id, kind, embedUrl };
+}
+
+function renderDriveSheet(embedUrl){
+  const wrap = document.createElement('div');
+  wrap.className = 'drive-frame-wrap';
+
+  const iframe = document.createElement('iframe');
+  iframe.src = embedUrl;
+  iframe.setAttribute('allow', 'autoplay');
+  iframe.referrerPolicy = 'no-referrer';
+  wrap.appendChild(iframe);
+
+  const fallback = document.createElement('div');
+  fallback.className = 'drive-fallback';
+  fallback.style.display = 'none';
+  fallback.innerHTML = `<strong style="color:var(--ink-deep);font-size:15px;">Aperçu non affiché ici</strong><span>Cette vue bloque l'intégration Google. Ouvre-le directement :</span><a href="${embedUrl}" target="_blank" rel="noopener" class="btn gold" style="text-decoration:none;">Ouvrir dans un nouvel onglet</a>`;
+  wrap.appendChild(fallback);
+  setTimeout(() => {
+    if (!iframe.contentWindow) fallback.style.display = 'flex';
+  }, 4000);
+
+  el.canvasArea.innerHTML = '';
+  el.canvasArea.appendChild(wrap);
+}
+
+function openDriveLinkFromInput(){
+  const raw = el.driveUrlInput.value;
+  if (!raw.trim()){ showToast('Colle un lien Google Drive d\u2019abord.'); return null; }
+  const parsed = parseDriveLink(raw);
+  if (!parsed){ showToast('Lien Google Drive non reconnu.'); return null; }
+  return parsed;
+}
+
+el.driveViewBtn?.addEventListener('click', () => {
+  const parsed = openDriveLinkFromInput();
+  if (!parsed) return;
+
+  if (syncedMode){
+    if (!isOwner){ showToast('Seul le présentateur peut ouvrir un document.'); return; }
+    sessionDocRef.set({
+      docType: 'drive',
+      docName: 'Document Google Drive',
+      driveEmbedUrl: parsed.embedUrl,
+      currentPage: 1,
+      totalPages: 1,
+      presenterName: viewerDisplayName || 'Présentateur',
+      updatedAt: Date.now(),
+    }).catch(err => { console.error('Erreur de partage du lien Drive :', err); showToast('Impossible de partager ce lien.'); });
+  } else {
+    state.activeId = null;
+    renderDocList();
+    el.emptyState.style.display = 'none';
+    el.docTitle.textContent = 'Document Google Drive';
+    el.docSub.textContent = ' · lecture seule';
+    el.pageIndicator.textContent = 'Aperçu Drive';
+    el.prevBtn.disabled = true;
+    el.nextBtn.disabled = true;
+    renderDriveSheet(parsed.embedUrl);
+  }
+});
+
+function updateDriveEditLink(){
+  const raw = el.driveUrlInput.value.trim();
+  el.driveEditBtn.href = raw ? normalizeUrl(raw) : '#';
+}
+// Plusieurs événements, au cas où le lien soit collé, glissé-déposé ou saisi
+// autrement qu'au clavier classique.
+['input', 'change', 'paste', 'keyup'].forEach(evt => {
+  el.driveUrlInput.addEventListener(evt, () => setTimeout(updateDriveEditLink, 0));
+});
+
+el.driveEditBtn?.addEventListener('click', (e) => {
+  const raw = el.driveUrlInput.value.trim();
+  if (!raw){
+    e.preventDefault();
+    showToast('Colle un lien Google Drive d\u2019abord.');
+    return;
+  }
+  // Resynchronisation systématique juste avant l'ouverture du lien, pour ne
+  // jamais partir sur une adresse restée par défaut ("#") ou sans protocole.
+  el.driveEditBtn.href = normalizeUrl(raw);
+});
+
+async function renderSyncedSession(data){
+  el.emptyState.style.display = 'none';
+  el.docTitle.textContent = data.docName || 'Document';
+  const typeLabel = data.docType === 'pdf' ? ' · PDF' : data.docType === 'drive' ? ' · Google Drive' : ' · Word';
+  el.docSub.textContent = typeLabel + (data.presenterName ? ` · présenté par ${data.presenterName}` : '');
+
+  if (data.docType === 'pdf'){
+    el.pageIndicator.textContent = `Page ${data.currentPage} / ${data.totalPages}`;
+    el.prevBtn.disabled = !isOwner || data.currentPage <= 1;
+    el.nextBtn.disabled = !isOwner || data.currentPage >= data.totalPages;
+    try {
+      if (syncedPdfCache.assetId !== data.assetId){
+        el.canvasArea.innerHTML = '<div class="loading"><div class="spinner"></div>Chargement du document…</div>';
+        await pdfWorkerReady;
+        const resp = await fetch('/_blob/' + data.assetId);
+        if (!resp.ok) throw new Error('blob_fetch_failed');
+        const buf = await resp.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
+        syncedPdfCache.assetId = data.assetId;
+        syncedPdfCache.pdfDoc = pdf;
+      }
+      await renderPdfSheet(syncedPdfCache.pdfDoc, data.currentPage);
+    } catch(err){
+      console.error('Erreur PDF (session partagée) :', err);
+      showFileError("Impossible d'afficher ce document pour le moment.");
+    }
+  } else if (data.docType === 'drive'){
+    el.pageIndicator.textContent = 'Aperçu Drive';
+    el.prevBtn.disabled = true;
+    el.nextBtn.disabled = true;
+    renderDriveSheet(data.driveEmbedUrl);
+  } else {
+    el.pageIndicator.textContent = 'Document Word';
+    el.prevBtn.disabled = true;
+    el.nextBtn.disabled = true;
+    renderDocxSheet(data.html || '<p>(document vide)</p>');
+  }
+}
+/* ================== fin mode session partagée ================== */
+
+
+
+/* ---------------- protections ---------------- */
+function isEditableField(target){
+  if (!target) return false;
+  const tag = target.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable;
+}
+
+document.addEventListener('contextmenu', e => {
+  if (isEditableField(e.target)) return;
+  e.preventDefault();
+  showToast('Le clic droit est désactivé sur ce document.');
+});
+document.addEventListener('selectstart', e => {
+  if (isEditableField(e.target)) return;
+  e.preventDefault();
+});
+document.addEventListener('dragstart', e => {
+  if (isEditableField(e.target)) return;
+  e.preventDefault();
+});
+document.addEventListener('copy', e => {
+  if (isEditableField(e.target)) return;
+  e.preventDefault();
+  showToast('La copie est désactivée sur ce document.');
+});
+document.addEventListener('cut', e => {
+  if (isEditableField(e.target)) return;
+  e.preventDefault();
+});
+
+document.addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  if (isEditableField(e.target) && ['c','v','x','a'].includes(k) && (e.ctrlKey || e.metaKey)) return;
+  const blocked =
+    (e.ctrlKey || e.metaKey) && ['c','s','p','u'].includes(k) ||
+    (e.ctrlKey && e.shiftKey && ['i','j','c'].includes(k)) ||
+    k === 'printscreen' ||
+    k === 'f12';
+  if (blocked){
+    e.preventDefault();
+    if (k === 'printscreen'){
+      showToast("Les captures d'écran ne sont pas recommandées pour ce document.");
+    } else {
+      showToast('Cette action est désactivée sur ce document.');
+    }
+  }
+});
+window.addEventListener('beforeprint', () => showToast('Impression désactivée.'));
+
+/* ---------------- file handling ---------------- */
+el.dropzone.addEventListener('dragover', e => { e.preventDefault(); el.dropzone.classList.add('drag'); });
+el.dropzone.addEventListener('dragleave', () => el.dropzone.classList.remove('drag'));
+el.dropzone.addEventListener('drop', e => {
+  e.preventDefault();
+  el.dropzone.classList.remove('drag');
+  handleFiles(e.dataTransfer.files);
+});
+el.fileInput.addEventListener('change', e => handleFiles(e.target.files));
+
+function handleFiles(fileList){
+  [...fileList].forEach(file => {
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (!['pdf','docx'].includes(ext)){
+      showToast(`Format non pris en charge : ${file.name}`);
+      return;
+    }
+    if (syncedMode){
+      if (!isOwner){
+        showToast('Seul le présentateur peut ajouter un document.');
+        return;
+      }
+      uploadToSession(file, ext);
+    } else {
+      addLocalDoc(file, ext);
+    }
+  });
+  el.fileInput.value = '';
+}
+
+function addLocalDoc(file, ext){
+    const id = 'doc_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
+    const docEntry = { id, name: file.name, type: ext, currentPage: 1, totalPages: 1 };
+    state.docs.push(docEntry);
+    renderDocList();
+
+    showLoadingState(file.name);
+
+    const reader = new FileReader();
+    reader.onerror = () => {
+      console.error('Erreur de lecture du fichier :', reader.error);
+      showFileError("Le fichier n'a pas pu être lu depuis le disque.");
+    };
+    reader.onload = async (ev) => {
+      if (ext === 'pdf'){
+        try {
+          await pdfWorkerReady;
+          const typedArray = new Uint8Array(ev.target.result);
+          const pdf = await pdfjsLib.getDocument({ data: typedArray }).promise;
+          docEntry.pdfDoc = pdf;
+          docEntry.totalPages = pdf.numPages;
+          openDoc(id);
+        } catch(err){
+          console.error('Erreur PDF :', err);
+          showFileError("Impossible d'ouvrir ce PDF. Le fichier est peut-être corrompu ou protégé.");
+        }
+      } else {
+        try {
+          const arrayBuffer = ev.target.result;
+          const result = await mammoth.convertToHtml({ arrayBuffer });
+          docEntry.htmlContent = result.value;
+          docEntry.totalPages = 1;
+          openDoc(id);
+        } catch(err){
+          console.error('Erreur Word :', err);
+          showFileError("Impossible d'ouvrir ce document Word.");
+        }
+      }
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+function showLoadingState(name){
+  el.emptyState.style.display = 'none';
+  el.canvasArea.innerHTML = `<div class="loading"><div class="spinner"></div>Ouverture de « ${escapeHtml(name)} »…</div>`;
+}
+
+function showFileError(message){
+  showToast(message);
+  el.canvasArea.innerHTML = `<div class="empty-state"><div class="mark"></div><h2>Lecture impossible</h2><p>${escapeHtml(message)}</p></div>`;
+}
+
+function renderDocList(){
+  el.docList.innerHTML = '';
+  state.docs.forEach(d => {
+    const item = document.createElement('div');
+    item.className = 'doc-item' + (d.id === state.activeId ? ' active' : '');
+    item.innerHTML = `<span class="dot"></span><span class="name">${escapeHtml(d.name)}</span>`;
+    item.addEventListener('click', () => openDoc(d.id));
+    el.docList.appendChild(item);
+  });
+}
+
+function escapeHtml(str){
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+/* ---------------- rendering ---------------- */
+async function openDoc(id){
+  state.activeId = id;
+  renderDocList();
+  const doc = state.docs.find(d => d.id === id);
+  el.docTitle.textContent = doc.name;
+  el.docSub.textContent = doc.type === 'pdf' ? ' · PDF' : ' · Word';
+  el.emptyState.style.display = 'none';
+
+  if (doc.type === 'pdf'){
+    el.prevBtn.disabled = doc.currentPage <= 1;
+    el.nextBtn.disabled = doc.currentPage >= doc.totalPages;
+    el.pageIndicator.textContent = `Page ${doc.currentPage} / ${doc.totalPages}`;
+    await renderPdfSheet(doc.pdfDoc, doc.currentPage);
+  } else {
+    el.prevBtn.disabled = true;
+    el.nextBtn.disabled = true;
+    el.pageIndicator.textContent = 'Document Word';
+    renderDocxSheet(doc.htmlContent);
+  }
+}
+
+async function renderPdfSheet(pdfDoc, pageNum){
+  el.canvasArea.innerHTML = '<div class="loading"><div class="spinner"></div>Chargement de la page…</div>';
+  const page = await pdfDoc.getPage(pageNum);
+  const viewport = page.getViewport({ scale: 1.8 });
+
+  const sheet = document.createElement('div');
+  sheet.className = 'sheet';
+  const canvas = document.createElement('canvas');
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+  canvas.setAttribute('draggable', 'false');
+  const ctx = canvas.getContext('2d');
+  await page.render({ canvasContext: ctx, viewport }).promise;
+
+  sheet.appendChild(canvas);
+  sheet.appendChild(buildWatermarkLayer());
+  el.canvasArea.innerHTML = '';
+  el.canvasArea.appendChild(sheet);
+}
+
+function renderDocxSheet(html){
+  const sheet = document.createElement('div');
+  sheet.className = 'sheet';
+  const content = document.createElement('div');
+  content.className = 'docx-content';
+  content.innerHTML = html;
+  sheet.appendChild(content);
+  sheet.appendChild(buildWatermarkLayer());
+  el.canvasArea.innerHTML = '';
+  el.canvasArea.appendChild(sheet);
+}
+
+function buildWatermarkLayer(){
+  const layer = document.createElement('div');
+  layer.className = 'watermark-layer';
+  const name = (el.viewerName.value || 'Consultation à distance').trim();
+  const now = new Date();
+  const stamp = now.toLocaleDateString('fr-FR') + ' ' + now.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'});
+  const label = `${name} — ${stamp}`;
+  for (let i = 0; i < 24; i++){
+    const span = document.createElement('span');
+    span.textContent = label;
+    layer.appendChild(span);
+  }
+  return layer;
+}
+
+// refresh watermark timestamp every minute + on name change
+setInterval(() => { if (state.activeId) refreshWatermark(); }, 60000);
+el.viewerName.addEventListener('input', () => { if (state.activeId) refreshWatermark(); });
+function refreshWatermark(){
+  const oldLayer = el.canvasArea.querySelector('.watermark-layer');
+  if (oldLayer) oldLayer.replaceWith(buildWatermarkLayer());
+}
+
+/* ---------------- navigation ---------------- */
+el.prevBtn.addEventListener('click', () => {
+  if (syncedMode){
+    if (!isOwner || !lastSessionData || lastSessionData.currentPage <= 1) return;
+    const newPage = lastSessionData.currentPage - 1;
+    sessionDocRef.update({ currentPage: newPage, updatedAt: Date.now() }).catch(err => console.error('Erreur de navigation :', err));
+    return;
+  }
+  const doc = state.docs.find(d => d.id === state.activeId);
+  if (!doc || doc.currentPage <= 1) return;
+  doc.currentPage--;
+  openDoc(doc.id);
+});
+el.nextBtn.addEventListener('click', () => {
+  if (syncedMode){
+    if (!isOwner || !lastSessionData || lastSessionData.currentPage >= lastSessionData.totalPages) return;
+    const newPage = lastSessionData.currentPage + 1;
+    sessionDocRef.update({ currentPage: newPage, updatedAt: Date.now() }).catch(err => console.error('Erreur de navigation :', err));
+    return;
+  }
+  const doc = state.docs.find(d => d.id === state.activeId);
+  if (!doc || doc.currentPage >= doc.totalPages) return;
+  doc.currentPage++;
+  openDoc(doc.id);
+});
+document.addEventListener('keydown', e => {
+  if (syncedMode && !isOwner) return;
+  if (!syncedMode && !state.activeId) return;
+  if (e.key === 'ArrowRight') el.nextBtn.click();
+  if (e.key === 'ArrowLeft') el.prevBtn.click();
+});
+
+/* ---------------- fullscreen ---------------- */
+el.fsBtn.addEventListener('click', () => {
+  if (!document.fullscreenElement){
+    el.stageWrap.requestFullscreen().catch(()=> showToast("Le plein écran n'est pas disponible sur cet appareil."));
+    el.fsBtn.textContent = 'Quitter le plein écran';
+  } else {
+    document.exitFullscreen();
+    el.fsBtn.textContent = 'Plein écran';
+  }
+});
+document.addEventListener('fullscreenchange', () => {
+  el.fsBtn.textContent = document.fullscreenElement ? 'Quitter le plein écran' : 'Plein écran';
+});
+</script>
+</body>
+</html>
